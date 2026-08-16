@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>회의실 예약</title>
+<style>
+  :root { --ink: #1c2333; --sub: #667085; --line: #e4e7ec; --brand: #2953e8;
+          --bad: #d92d20; --ok: #067647; --bg: #f4f6fb; --free: #cfe0fb; --free-hover: #a9c6f7; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  .who { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--sub); }
+  .badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #eef2ff; color: var(--brand); }
+  .badge.admin { background: #fef3f2; color: var(--bad); }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+  label { display: block; font-size: 12px; color: var(--sub); margin: 10px 0 4px; }
+  input, select { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; font-family: inherit; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 130px; }
+  button { padding: 9px 16px; border: 0; border-radius: 8px; background: var(--brand); color: #fff; font-size: 14px; cursor: pointer; font-family: inherit; }
+  button.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+  button.danger { background: #fff; color: var(--bad); border: 1px solid #fecdca; }
+  button:hover { filter: brightness(0.96); }
+  .tabs { display: flex; gap: 8px; margin-bottom: 8px; }
+  .tabs button { background: #fff; color: var(--sub); border: 1px solid var(--line); }
+  .tabs button.on { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .checks { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; }
+  .checks label { display: flex; align-items: center; gap: 5px; margin: 0; color: var(--ink); }
+  .checks input { width: auto; }
+  .msg { margin-top: 10px; font-size: 13px; padding: 10px 12px; border-radius: 8px; display: none; white-space: pre-wrap; }
+  .msg.ok { display: block; background: #ecfdf3; color: var(--ok); }
+  .msg.bad { display: block; background: #fef3f2; color: var(--bad); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+  th { color: var(--sub); font-weight: 500; font-size: 12px; }
+  .hint { font-size: 12px; color: var(--sub); margin-top: 8px; }
+  #app { display: none; }
+
+  /* ── 타임라인 (30분 단위 슬롯) ─────────────────────────────── */
+  .legend { display: flex; gap: 14px; align-items: center; font-size: 12px; color: var(--sub); margin-top: 12px; }
+  .legend i { display: inline-block; width: 13px; height: 13px; border-radius: 4px; margin-right: 5px; vertical-align: -2px; }
+  .roomrow { border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-top: 10px; }
+  .roomhead { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .roomhead b { font-size: 15px; }
+  .tag { font-size: 11px; background: var(--bg); border-radius: 6px; padding: 2px 6px; color: var(--sub); }
+  .hours { display: grid; grid-template-columns: repeat(10, 1fr); margin-top: 12px; font-size: 10px; color: var(--sub); }
+  .hours span { border-left: 1px solid var(--line); padding: 0 0 2px 3px; }
+  .slots { display: grid; grid-template-columns: repeat(20, 1fr); gap: 2px; }
+  .cell { height: 34px; border-radius: 4px; background: var(--free); cursor: pointer; border: 0; padding: 0; }
+  .cell:hover { background: var(--free-hover); filter: none; }
+  .cell.busy { background: var(--line); cursor: not-allowed; }
+  .cell.sel, .cell.sel:hover { background: var(--brand); }
+  .confirm { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px;
+             background: var(--bg); border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+  .confirm input { width: auto; }
+  .confirm .msg { flex-basis: 100%; margin-top: 0; }
+
+  /* ── 자연어 채팅 패널 (POST /reserve → 에이전트) ───────────────── */
+  .chat-log { display: flex; flex-direction: column; gap: 8px; max-height: 340px;
+              overflow-y: auto; padding: 4px 2px; margin-bottom: 12px; }
+  .chat-log:empty { display: none; }
+  .bubble { max-width: 82%; padding: 9px 12px; border-radius: 12px; font-size: 14px;
+            line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+  .bubble.user { align-self: flex-end; background: var(--brand); color: #fff; border-bottom-right-radius: 4px; }
+  .bubble.bot { align-self: flex-start; background: var(--bg); color: var(--ink); border-bottom-left-radius: 4px; }
+  .bubble.pending { color: var(--sub); }
+  .chatbar { display: flex; gap: 10px; align-items: flex-end; }
+  .chatbar > input { flex: 1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🏢 회의실 예약</h1>
+    <div class="who" id="who"></div>
+  </header>
+
+  <!-- 로그인/회원가입 -->
+  <section class="card" id="auth">
+    <div class="tabs">
+      <button id="tab-login" class="on" onclick="showTab('login')">로그인</button>
+      <button id="tab-signup" onclick="showTab('signup')">회원가입</button>
+    </div>
+    <form id="form-login" onsubmit="return doLogin(event)">
+      <div class="row">
+        <div><label>이메일</label><input id="login-email" type="email" required value="hana@example.com"></div>
+        <div><label>비밀번호</label><input id="login-password" type="password" required value="demo1234"></div>
+      </div>
+      <label></label><button>로그인</button>
+      <p class="hint">시드 계정 비밀번호는 전부 <code>demo1234</code> —
+        member: hana@ / duri@ / semi@example.com · admin: admin@example.com</p>
+    </form>
+    <form id="form-signup" style="display:none" onsubmit="return doSignup(event)">
+      <div class="row">
+        <div><label>이름</label><input id="su-name" required></div>
+        <div><label>이메일</label><input id="su-email" type="email" required></div>
+      </div>
+      <div class="row">
+        <div><label>비밀번호</label><input id="su-password" type="password" required minlength="8"></div>
+        <div><label>팀</label>
+          <select id="su-team"><option value="1">플랫폼팀</option><option value="2">그로스팀</option></select>
+        </div>
+      </div>
+      <label></label><button>가입하기 (member)</button>
+      <p class="hint">가입은 항상 member 역할입니다 — 관리자는 시드에서만 지정됩니다.</p>
+    </form>
+    <div class="msg" id="auth-msg"></div>
+  </section>
+
+  <!-- 로그인 후 화면 -->
+  <div id="app">
+    <!-- 자연어 채팅 — v1.0에서 얹은 에이전트 통로 (POST /reserve) -->
+    <section class="card" id="chat">
+      <h2>💬 자연어로 예약 <span class="hint">— 말하듯 요청하면 에이전트가 검색·예약·취소합니다</span></h2>
+      <div class="chat-log" id="chat-log"></div>
+      <form class="chatbar" onsubmit="return sendChat(event)">
+        <input id="chat-input" autocomplete="off"
+               placeholder="예: 내일 오후에 6명 화면공유 되는 방 예약해줘">
+        <button id="chat-send">보내기</button>
+      </form>
+      <p class="hint">같은 대화 안에서는 맥락이 이어집니다 (예: "그 방 내일은 비어?").
+        예약이 바뀌면 아래 타임라인도 갱신됩니다.</p>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <div><label>날짜</label><input id="q-date" type="date" onchange="loadBoard()"></div>
+        <div><label>최소 인원</label><input id="q-capacity" type="number" min="1" placeholder="전체" onchange="loadBoard()"></div>
+      </div>
+      <label>필요 설비</label>
+      <div class="checks" id="q-equipment" onchange="loadBoard()">
+        <label><input type="checkbox" value="화면공유">화면공유</label>
+        <label><input type="checkbox" value="화상회의">화상회의</label>
+        <label><input type="checkbox" value="화이트보드">화이트보드</label>
+        <label><input type="checkbox" value="프로젝터">프로젝터</label>
+        <label><input type="checkbox" value="마이크">마이크</label>
+        <label><input type="checkbox" value="모니터">모니터</label>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--line)"></i>마감</span>
+        <span><i style="background:var(--free)"></i>예약 가능 (30분 단위)</span>
+        <span><i style="background:var(--brand)"></i>선택됨</span>
+      </div>
+      <div id="board"></div>
+      <div class="msg" id="board-msg"></div>
+    </section>
+
+    <section class="card">
+      <h2 id="list-title">🧾 내 예약</h2>
+      <table id="reservations"></table>
+      <div class="msg" id="list-msg"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const OPEN_HOUR = 9, CLOSE_HOUR = 19;                 // 타임라인 표시 범위
+const SLOTS = (CLOSE_HOUR - OPEN_HOUR) * 2;           // 30분 단위 칸 수
+let me = null;
+let board = [];          // [{room, cells: [{busy, who, purpose}]}]
+let sel = null;          // {ri, a, b} — 방 인덱스, 선택 구간(칸 인덱스, 양끝 포함)
+let conversationId = null;  // /reserve 대화 이어가기 — 서버가 매 응답에 실어 줍니다
+
+// ── API 헬퍼 — 모든 요청에 Bearer 토큰을 실어 보냅니다 ──────────────
+async function api(path, options = {}) {
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  const token = localStorage.getItem("token");
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const resp = await fetch(path, { ...options, headers });
+  const body = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(body.detail || `요청 실패 (${resp.status})`);
+  return body;
+}
+
+function showMsg(id, text, ok) {
+  const el = $(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = `msg ${ok ? "ok" : "bad"}`;
+}
+
+function showTab(name) {
+  $("form-login").style.display = name === "login" ? "" : "none";
+  $("form-signup").style.display = name === "signup" ? "" : "none";
+  $("tab-login").classList.toggle("on", name === "login");
+  $("tab-signup").classList.toggle("on", name === "signup");
+}
+
+// ── 인증 ────────────────────────────────────────────────────────────
+async function doSignup(event) {
+  event.preventDefault();
+  try {
+    await api("/signup", { method: "POST", body: JSON.stringify({
+      name: $("su-name").value, email: $("su-email").value,
+      password: $("su-password").value, team_id: Number($("su-team").value),
+    })});
+    showMsg("auth-msg", "가입 완료! 로그인해 주세요.", true);
+    $("login-email").value = $("su-email").value;
+    $("login-password").value = "";
+    showTab("login");
+  } catch (err) { showMsg("auth-msg", err.message, false); }
+  return false;
+}
+
+async function doLogin(event) {
+  event.preventDefault();
+  try {
+    const { token } = await api("/login", { method: "POST", body: JSON.stringify({
+      email: $("login-email").value, password: $("login-password").value,
+    })});
+    localStorage.setItem("token", token);
+    await enter();
+  } catch (err) { showMsg("auth-msg", err.message, false); }
+  return false;
+}
+
+function logout() {
+  localStorage.removeItem("token");
+  location.reload();
+}
+
+async function enter() {
+  me = await api("/me");
+  $("auth").style.display = "none";
+  $("app").style.display = "block";
+  const roleBadge = me.role === "admin"
+    ? '<span class="badge admin">admin</span>' : '<span class="badge">member</span>';
+  $("who").innerHTML = `${me.name} ${roleBadge}
+    <button class="ghost" style="padding:4px 10px" onclick="logout()">로그아웃</button>`;
+  $("list-title").textContent = me.role === "admin" ? "🧾 전체 예약 (관리자)" : "🧾 내 예약";
+  const tomorrow = new Date(Date.now() + 86400000);
+  $("q-date").value = tomorrow.toISOString().slice(0, 10);
+  await loadBoard();
+  await loadReservations();
+}
+
+// ── 자연어 채팅 (POST /reserve) ─────────────────────────────────────
+function addBubble(role, text) {
+  const log = $("chat-log");
+  const bubble = document.createElement("div");
+  bubble.className = `bubble ${role}`;
+  bubble.textContent = text;
+  log.appendChild(bubble);
+  log.scrollTop = log.scrollHeight;
+  return bubble;
+}
+
+async function sendChat(event) {
+  event.preventDefault();
+  const input = $("chat-input");
+  const message = input.value.trim();
+  if (!message) return false;
+  input.value = "";
+  addBubble("user", message);
+  const pending = addBubble("bot pending", "…");
+  $("chat-send").disabled = true;
+  try {
+    // conversation_id가 있으면 같은 대화를 이어갑니다 (서버는 무상태 — 이력은 DB에서)
+    const body = { message };
+    if (conversationId) body.conversation_id = conversationId;
+    const res = await api("/reserve", { method: "POST", body: JSON.stringify(body) });
+    conversationId = res.conversation_id;
+    pending.className = "bubble bot";
+    pending.textContent = res.reply;
+    // 에이전트가 예약을 만들거나 취소했을 수 있으니 타임라인·목록을 새로 읽습니다
+    await loadBoard();
+    await loadReservations();
+  } catch (err) {
+    pending.className = "bubble bot";
+    pending.textContent = `⚠️ ${err.message}`;
+  } finally {
+    $("chat-send").disabled = false;
+    input.focus();
+  }
+  return false;
+}
+
+// ── 타임라인 보드 ───────────────────────────────────────────────────
+// 칸 인덱스 → "HH:MM" (idx는 30분 단위, t(SLOTS)는 마감 시각)
+const t = (idx) =>
+  `${String(OPEN_HOUR + Math.floor(idx / 2)).padStart(2, "0")}:${idx % 2 ? "30" : "00"}`;
+
+async function loadBoard() {
+  const day = $("q-date").value;
+  const params = new URLSearchParams();
+  if ($("q-capacity").value) params.set("capacity", $("q-capacity").value);
+  const equipment = [...document.querySelectorAll("#q-equipment input:checked")].map((el) => el.value);
+  if (equipment.length) params.set("equipment", equipment.join(","));
+
+  const rooms = await api(`/rooms?${params}`);
+  const avail = await Promise.all(rooms.map((room) =>
+    api(`/rooms/${room.id}/availability?start=${day}T${t(0)}:00&end=${day}T${t(SLOTS)}:00`)));
+
+  board = rooms.map((room, i) => {
+    const busy = avail[i].busy.map((b) => ({ ...b, s: new Date(b.starts_at), e: new Date(b.ends_at) }));
+    const cells = Array.from({ length: SLOTS }, (_, idx) => {
+      const s = new Date(`${day}T${t(idx)}:00`);
+      const e = new Date(`${day}T${t(idx + 1)}:00`);
+      const hit = busy.find((b) => s < b.e && b.s < e);
+      return hit ? { busy: true, who: hit.reserved_by, purpose: hit.purpose } : { busy: false };
+    });
+    return { room, cells };
+  });
+  sel = null;
+  renderBoard();
+}
+
+function renderBoard() {
+  // 재렌더링 전에 입력 중이던 목적·인원을 보존합니다
+  const keepPurpose = $("c-purpose")?.value || "";
+  const keepAttendees = $("c-attendees")?.value || "";
+
+  const hourLabels = Array.from({ length: CLOSE_HOUR - OPEN_HOUR },
+    (_, i) => `<span>${OPEN_HOUR + i}시</span>`).join("");
+
+  $("board").innerHTML = board.map(({ room, cells }, ri) => {
+    const slots = cells.map((cell, idx) => {
+      const selected = sel && sel.ri === ri && idx >= sel.a && idx <= sel.b;
+      const cls = cell.busy ? "cell busy" : selected ? "cell sel" : "cell";
+      const title = cell.busy
+        ? `${t(idx)}~${t(idx + 1)} 마감 — ${cell.who}${cell.purpose ? " · " + cell.purpose : ""}`
+        : `${t(idx)}~${t(idx + 1)} 예약 가능`;
+      return `<button type="button" class="${cls}" title="${title}" onclick="onSlot(${ri},${idx})"></button>`;
+    }).join("");
+
+    const confirm = sel && sel.ri === ri ? `
+      <div class="confirm">
+        <b>${t(sel.a)} ~ ${t(sel.b + 1)}</b> <span class="hint">(${(sel.b - sel.a + 1) * 30}분)</span>
+        <input id="c-purpose" placeholder="목적 (예: 팀 회의)">
+        <input id="c-attendees" type="number" min="1" placeholder="인원" style="width:72px">
+        <button onclick="reserveSelected()">예약하기</button>
+        <button class="ghost" onclick="clearSel()">해제</button>
+        <div class="msg" id="confirm-msg"></div>
+      </div>` : "";
+
+    return `<div class="roomrow">
+      <div class="roomhead">
+        <b>${room.name}</b><span class="hint">${room.capacity}명</span>
+        ${room.equipment.map((e) => `<span class="tag">${e}</span>`).join("")}
+      </div>
+      <div class="hours">${hourLabels}</div>
+      <div class="slots">${slots}</div>
+      ${confirm}
+    </div>`;
+  }).join("") || "<p class='hint'>조건에 맞는 방이 없습니다.</p>";
+
+  if (sel) {
+    if ($("c-purpose")) $("c-purpose").value = keepPurpose;
+    if ($("c-attendees")) $("c-attendees").value = keepAttendees;
+  }
+}
+
+function rangeFree(ri, a, b) {
+  return board[ri].cells.slice(a, b + 1).every((cell) => !cell.busy);
+}
+
+// 빈 칸 클릭: 새 선택 시작 → 같은 방의 다른 빈 칸 클릭으로 구간 확장
+function onSlot(ri, idx) {
+  if (board[ri].cells[idx].busy) return;
+  if (!sel || sel.ri !== ri) sel = { ri, a: idx, b: idx };
+  else if (idx === sel.a && idx === sel.b) sel = null;                       // 같은 칸 → 해제
+  else if (idx > sel.b && rangeFree(ri, sel.a, idx)) sel.b = idx;            // 뒤로 확장
+  else if (idx < sel.a && rangeFree(ri, idx, sel.b)) sel.a = idx;            // 앞으로 확장
+  else sel = { ri, a: idx, b: idx };                                         // 그 외 → 새로 시작
+  renderBoard();
+}
+
+function clearSel() {
+  sel = null;
+  renderBoard();
+}
+
+async function reserveSelected() {
+  const day = $("q-date").value;
+  const { ri, a, b } = sel;
+  const room = board[ri].room;
+  try {
+    const created = await api("/reservations", { method: "POST", body: JSON.stringify({
+      room_id: room.id,
+      starts_at: `${day}T${t(a)}:00`,
+      ends_at: `${day}T${t(b + 1)}:00`,
+      purpose: $("c-purpose").value,
+      attendees: $("c-attendees").value ? Number($("c-attendees").value) : null,
+    })});
+    showMsg("board-msg", `예약 확정 — ${room.name} ${t(a)}~${t(b + 1)} (#${created.id})`, true);
+    await loadBoard();
+    await loadReservations();
+  } catch (err) { showMsg("confirm-msg", err.message, false); }
+}
+
+// ── 예약 목록·취소 ──────────────────────────────────────────────────
+const fmtTime = (iso) => new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false });
+const fmtDay = (iso) => new Date(iso).toLocaleDateString("ko-KR", { month: "short", day: "numeric", weekday: "short" });
+
+async function loadReservations() {
+  const items = await api("/reservations");
+  const rows = items.map((r) => `<tr>
+      <td><b>${r.room_name}</b></td>
+      <td>${fmtDay(r.starts_at)} ${fmtTime(r.starts_at)}~${fmtTime(r.ends_at)}</td>
+      <td>${r.purpose || "-"}</td>
+      <td>${r.reserved_by}</td>
+      <td><button class="danger" onclick="cancelReservation(${r.id})">취소</button></td>
+    </tr>`).join("");
+  $("reservations").innerHTML = items.length
+    ? `<tr><th>회의실</th><th>시간</th><th>목적</th><th>예약자</th><th></th></tr>${rows}`
+    : "<tr><td class='hint'>예약이 없습니다.</td></tr>";
+}
+
+async function cancelReservation(id) {
+  try {
+    await api(`/reservations/${id}`, { method: "DELETE" });
+    showMsg("list-msg", `예약 #${id} 취소됨`, true);
+  } catch (err) { showMsg("list-msg", err.message, false); }
+  await loadReservations();
+  await loadBoard();
+}
+
+// 토큰이 남아 있으면 자동 로그인 시도
+if (localStorage.getItem("token")) enter().catch(() => localStorage.removeItem("token"));
+</script>
+</body>
+</html>
